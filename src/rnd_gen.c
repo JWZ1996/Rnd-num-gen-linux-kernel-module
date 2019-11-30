@@ -3,6 +3,25 @@
  * @author  Jan Wojciech Zembowicz
  * @version 0.1 
 */
+/** 
+KONSULTACJE:
+
+DODAC
+IOCTL:
+
+Praca:
+ARM
+RTOS
+mikrokotrolery
+free rtos
+
+
+
+
+
+
+*/
+
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -13,6 +32,8 @@
 #include <linux/cdev.h>
 #include <linux/device.h>
 #include <linux/random.h>
+
+#include <linux/delay.h>
   
 #define DEVICE_NAME "JZ_rnd_gen"
 #define SUCCESS 0
@@ -24,8 +45,6 @@ MODULE_AUTHOR("Jan Wojciech Zembowicz");
 MODULE_DESCRIPTION("A simple rnd_gen driver"); 
   
 MODULE_VERSION("0.1"); 
-
-void test(void);
 
 dev_t my_dev = 0;
 struct cdev *rnd_gen_cdev = NULL;
@@ -57,6 +76,15 @@ static void unregister_all()
     device_destroy(rnd_gen_class,my_dev);
   }
 
+  // Class destruction
+  if(true)
+  {
+  	//printk(KERN_ALERT "CLASS DESTROYED.\n");
+    class_destroy(rnd_gen_class);
+    rnd_gen_class=NULL;
+  }
+
+  // Char device removal
   if(rnd_gen_cdev)
   {
   	cdev_del(rnd_gen_cdev);
@@ -67,13 +95,7 @@ static void unregister_all()
   // Unregistering dev no
   unregister_chrdev_region(my_dev, 1);
 
-  // Class destruction
-  if(rnd_gen_class)
-  {
-  	printk(KERN_ALERT "CLASS DESTROYED.\n");
-    class_destroy(rnd_gen_class);
-    rnd_gen_class=NULL;
-  }
+
 }
 
 static int __init start(void)
@@ -156,7 +178,7 @@ static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *of
 	// Previous solution:
 	// 0. Global pointer to byte array
 	// 1. dev_open allocates kmemory
-	// 2. device_write allocates the requested number of bytes and fills arr with random bytes
+	// 2. device_ioctl allocates the requested number of bytes and fills arr with random bytes
 	// 3. device_read reads and copies bytes
 	// 4. device_release frees kmemory
 
@@ -170,7 +192,10 @@ static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *of
     if (!packet){
     	printk(KERN_ALERT "dev_read: memory allocation failed");
     	return -EFAULT;
-    }
+    };
+
+    // Delay simulation
+    mdelay(500);
 
     get_random_bytes( packet, len );
 
