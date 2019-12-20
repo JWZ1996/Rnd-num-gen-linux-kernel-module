@@ -14,9 +14,7 @@ make
 echo ""
 echo "====== INSMOD MODULE ======="
 echo ""
-
 insmod rnd_gen.ko
-
 echo ""
 echo "======== RECOMPILE ========="
 echo ""

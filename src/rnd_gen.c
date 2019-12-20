@@ -62,26 +62,28 @@ struct ioctl_packet
 };
 
 
-struct driver_t 
+struct generator_t 
 {
 	dev_t dev_no;
 	struct cdev *cdev;
-	struct mutex *lock;
+	struct mutex lock;
 };
 
 
 
 
-struct driver_t rnd_gen_drvr = {
+struct generator_t core = {
 	.dev_no = 0,
 	.cdev = NULL,
-
 };
+
 
 static struct class *rnd_gen_class = NULL;
 
+struct generator_t* get_free_core(void);
+char get_random_byte(struct generator_t* both);
 
-char get_random_byte(void);
+
 static void unregister_all(void);
 static int dev_open(struct inode*, struct file*);
 static int dev_release(struct inode*, struct file*);
@@ -103,21 +105,21 @@ static void unregister_all()
   printk(KERN_ALERT "DO WIDZENIA - rnd_gen exited.\n");
 
   // Deleting device from class
-  if(rnd_gen_drvr.dev_no && rnd_gen_class)
+  if(core.dev_no && rnd_gen_class)
   {
-    device_destroy(rnd_gen_class,rnd_gen_drvr.dev_no);
+    device_destroy(rnd_gen_class,core.dev_no);
   }
 
   // Char device removal
-  if(rnd_gen_drvr.cdev)
+  if(core.cdev)
   {
-  	cdev_del(rnd_gen_drvr.cdev);
-  	rnd_gen_drvr.cdev = NULL;
+  	cdev_del(core.cdev);
+  	core.cdev = NULL;
   }
 
 
   // Unregistering dev no
-  unregister_chrdev_region(rnd_gen_drvr.dev_no, 1);
+  unregister_chrdev_region(core.dev_no, 1);
 
   // Class destruction
   if(rnd_gen_class)
@@ -144,25 +146,25 @@ static int __init start(void)
 	}  
 
 	// Device number allocation
-	res=alloc_chrdev_region(&rnd_gen_drvr.dev_no, 0, 1, DEVICE_NAME);
+	res=alloc_chrdev_region(&core.dev_no, 0, 1, DEVICE_NAME);
 	if(res) {
 	    printk ("Alocation of the device number for %s failed\n",DEVICE_NAME);
 	    goto err1; 
 	};  
 
-	rnd_gen_drvr.cdev = cdev_alloc();
+	core.cdev = cdev_alloc();
 
-	if (rnd_gen_drvr.cdev==NULL) {
+	if (core.cdev==NULL) {
 	    printk (KERN_ERR "Allocation of cdev for %s failed\n", DEVICE_NAME);
 	    res = -ENODEV;
 	    goto err1;
 	};
 
-	rnd_gen_drvr.cdev->ops = &fops;
-	rnd_gen_drvr.cdev->owner = THIS_MODULE;
+	core.cdev->ops = &fops;
+	core.cdev->owner = THIS_MODULE;
 
 	// Char device addition
-	res=cdev_add(rnd_gen_drvr.cdev, rnd_gen_drvr.dev_no, 1);
+	res=cdev_add(core.cdev, core.dev_no, 1);
 	if(res) {
 	    printk (KERN_ERR "Registration of the device number for %s failed\n",
 	            DEVICE_NAME);
@@ -170,13 +172,13 @@ static int __init start(void)
 	};
 
 	// Device creation
-	device_create(rnd_gen_class,NULL,rnd_gen_drvr.dev_no,NULL,"rnd_gen_drvr.dev_no%d",MINOR(rnd_gen_drvr.dev_no));
+	device_create(rnd_gen_class,NULL,core.dev_no,NULL,"core.dev_no%d",MINOR(core.dev_no));
 	printk (KERN_ALERT "Registeration succesful. The major device number %s is %d.\n",
 		  DEVICE_NAME,
-		  MAJOR(rnd_gen_drvr.dev_no));
+		  MAJOR(core.dev_no));
 
 	// Mutex init
-    mutex_init(rnd_gen_drvr.lock);
+    mutex_init(&core.lock);
 
 
 	return SUCCESS;
@@ -224,6 +226,7 @@ static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *of
 	// then copies to user space and frees virtual memory.
 
     int errors = 0;
+    int i;
     char *packet = (char*)vmalloc(sizeof(char) * len);
 
     if (!packet){
@@ -231,16 +234,20 @@ static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *of
     	return -EFAULT;
     };
 
-    // Delay simulation
-    mdelay(500);
+    mutex_lock(&core.lock);
 
-    get_random_bytes( packet, len );
+    // Delay simulation
+    for(i = 0; i < len; i++)
+    {
+    	packet[i] = get_random_byte(get_free_core());
+    }
 
     errors = copy_to_user(buffer, packet, len);
 
     vfree(packet);
-    return errors == 0 ? len : -EFAULT;
+    mutex_unlock(&core.lock);
 
+    return errors == 0 ? len : -EFAULT;
 }
 
 
@@ -275,7 +282,7 @@ long dev_ioctl (struct file *filp, unsigned int cmd, unsigned long arg)
    		// // Byte array fill
    		for( i = 0; i < packet.byte_count; i++ )
    		{
-   			rnd_byte_arr[i] = get_random_byte();
+   			rnd_byte_arr[i] = get_random_byte(get_free_core());
    			
    		}
 
@@ -303,14 +310,22 @@ long dev_ioctl (struct file *filp, unsigned int cmd, unsigned long arg)
    		return -1; 
  	} // END OF SWITCH
 }
-char get_random_byte()
+char get_random_byte(struct generator_t* both)
 {
 	char r;
+
+	mutex_lock(&both->lock);
 	get_random_bytes( &r, 1 );
 
 	// Simulates delay
+
+	mutex_unlock(&both->lock);
 	mdelay(500);
 	return r;
+}
+struct generator_t* get_free_core()
+{
+	return &core;
 }
 
   
