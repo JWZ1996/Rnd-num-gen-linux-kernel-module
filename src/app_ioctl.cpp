@@ -8,8 +8,8 @@
 #include <cstring>
 
 
-#define BYTES_IN_TIME 11
-#define NUMBER_OF_BYTES 12
+#define BYTES_IN_TIME  1
+#define NUMBER_OF_BYTES  8
 
 struct ioctl_packet
 {

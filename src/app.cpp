@@ -37,7 +37,7 @@ public:
 		}
 		catch (const std::exception& e)
 		{
-			std::cout << "Exception occured: " << e.what() <<"\n File will be closed.";
+			std::cout << "Exception occured: " << e.what() <<" File will be closed.\n";
 
 			if(myFile.is_open())
 				myFile.close();
