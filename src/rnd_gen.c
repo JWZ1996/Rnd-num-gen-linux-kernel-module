@@ -338,8 +338,8 @@ struct generator_t* get_free_core( struct driver_t* input )
 	int i = 0;
 	while( 1 )
 	{
-\
-		// Is core free?
+
+		// Check is core free?
 		if( !mutex_is_locked( &input->cores[i].lock ) )
 		{
 			// Mutex handling
