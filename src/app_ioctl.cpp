@@ -7,9 +7,12 @@
 #include <string>
 #include <cstring>
 
+// IOCTL numbers
+#define RND_GEN_MAGIC_NR 'r'
 
-#define BYTES_IN_TIME  1
-#define NUMBER_OF_BYTES  8
+// CONSTS: 
+#define CORES_COUNT 3
+#define RND_GEN_NUMBER_OF_BYTES  _IO(RND_GEN_MAGIC_NR,1)
 
 struct ioctl_packet
 {
@@ -31,7 +34,7 @@ int main() {
 
     fd = open("/dev/char/240:0",O_RDWR);
 
-    ioctl( fd, NUMBER_OF_BYTES, &packet);
+    ioctl( fd, RND_GEN_NUMBER_OF_BYTES, &packet);
 
     memcpy( &rnd_number, packet.bytes, packet.byte_count );
 

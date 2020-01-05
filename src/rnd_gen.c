@@ -14,18 +14,21 @@
 #include <linux/device.h>
 #include <linux/random.h>
 #include <linux/delay.h>
+#include<linux/workqueue.h>
 
+// IOCTL numbers
+#define RND_GEN_MAGIC_NR 'r'
 
 // CONSTS: 
 #define CORES_COUNT 3
+#define RND_GEN_NUMBER_OF_BYTES  _IO(RND_GEN_MAGIC_NR,1)
 
-#define BYTES_IN_TIME  1
-#define NUMBER_OF_BYTES  8
 
 typedef char BYTE;
 
 const char* DEVICE_NAME = "JZ_rnd_gen";
 const int SUCCESS = 0;
+const int SLEEP_TIME = 50;
 
 
 MODULE_LICENSE( "GPL" ); 
@@ -54,6 +57,7 @@ struct driver_t
 	dev_t dev_no;
 	struct cdev *cdev;
 	size_t core_count;
+	wait_queue_head_t wait_queue;
 	struct generator_t cores[CORES_COUNT];
 };
 
@@ -118,7 +122,7 @@ static void unregister_all()
   if( rnd_gen_class )
   {
     class_destroy( rnd_gen_class );
-    rnd_gen_class=NULL;
+    rnd_gen_class = NULL;
   }
 }
 
@@ -170,9 +174,12 @@ static int __init start( void )
 	// Cores initialization
     res = init_cores( &rnd_drvr );
     if( res < 0 ) {
-	    printk ( KERN_ERR "Cores initializing failed" );
+	    printk ( KERN_ERR "Rnd_gen cores initializing failed" );
 	    goto err1;
 	};
+
+	// Wait queue initialization
+	init_waitqueue_head(&rnd_drvr.wait_queue);
 
 
 	return SUCCESS;
@@ -216,40 +223,28 @@ static int dev_open( struct inode *inodep, struct file *filep )
 
 static ssize_t dev_write( struct file *filep, const char *buffer, size_t len, loff_t *offset )
 {
-
    printk( KERN_ALERT "rnd_gen device is read only\n" );
    return -EFAULT;
 }
 
-static int dev_release( struct inode *inodep, struct file *filep ) {
+static int dev_release( struct inode *inodep, struct file *filep ) 
+{
    printk( KERN_INFO "rnd_gen DEVICE CLOSED \n" );
    return SUCCESS;
 }
 
-static ssize_t dev_read( struct file *filep, char *buffer, size_t len, loff_t *offset ) {
-    
-	// Previous solution:
-	// 0. Global pointer to byte array
-	// 1. dev_open allocates kmemory
-	// 2. device_ioctl allocates the requested number of bytes and fills arr with random bytes
-	// 3. device_read reads and copies bytes
-	// 4. device_release frees kmemory
-
-	// Current solution:
-	// dev_read finds out how big ( in bytes - size_t len ) the number is requested, allocates virtual memory
-	// then copies to user space and frees virtual memory.
-
+static ssize_t dev_read( struct file *filep, char *buffer, size_t len, loff_t *offset ) 
+{
     int errors = 0;
     int i;
-    char *packet = ( char* )vmalloc( sizeof( char ) * len );
+    BYTE *packet = ( BYTE* )vmalloc( len );
 
     if ( !packet ){
     	printk( KERN_ALERT "dev_read: memory allocation failed" );
     	return -EFAULT;
     };
 
-    mutex_lock( &rnd_drvr.cores[0].lock );
-
+    // Get bytes
     for( i = 0; i < len; i++ )
     {
     	packet[i] = get_random_byte( get_free_core( &rnd_drvr ) );
@@ -258,7 +253,6 @@ static ssize_t dev_read( struct file *filep, char *buffer, size_t len, loff_t *o
     errors = copy_to_user( buffer, packet, len );
 
     vfree( packet );
-    mutex_unlock( &rnd_drvr.cores[0].lock );
 
     return errors == 0 ? len : -EFAULT;
 }
@@ -276,14 +270,14 @@ long dev_ioctl ( struct file *filp, unsigned int cmd, unsigned long arg )
 	switch ( cmd ) {
 		
 	// Copies to user requested number of bytes
-   	case NUMBER_OF_BYTES: 
+	// Makra od ioctl uzyc
+   	case RND_GEN_NUMBER_OF_BYTES: 
 
    		ret_val = copy_from_user( &packet, ( struct ioctl_packet* )arg, sizeof( struct ioctl_packet ) );
 		if ( ret_val ){
            printk( KERN_WARNING "COPY_FROM_USER failed !" );
            return -1;
 		}
-
 
    		// v. mem. allocation
    		if( ( rnd_byte_arr = vmalloc( packet.byte_count ) ) == NULL )
@@ -292,7 +286,7 @@ long dev_ioctl ( struct file *filp, unsigned int cmd, unsigned long arg )
    			return -1;
    		}
 
-   		// // Byte array fill
+   		//  Byte array fill
    		for( i = 0; i < packet.byte_count; i++ )
    		{
    			rnd_byte_arr[i] = get_random_byte( get_free_core( &rnd_drvr ) );
@@ -314,7 +308,7 @@ long dev_ioctl ( struct file *filp, unsigned int cmd, unsigned long arg )
 		}
 
    		vfree( rnd_byte_arr );
-    	return NUMBER_OF_BYTES;
+    	return RND_GEN_NUMBER_OF_BYTES;
    
    	default:
 
@@ -328,7 +322,6 @@ BYTE get_random_byte( struct generator_t* input )
 {
 	BYTE r;
 
-	mutex_lock( &input->lock );
 	get_random_bytes( &r, 1 );
 
 	// Simulates delay
@@ -341,17 +334,28 @@ BYTE get_random_byte( struct generator_t* input )
 // If no core is free - acts like a spinlock
 struct generator_t* get_free_core( struct driver_t* input )
 {
+	// Kolejka procesow gdy zaden rdzen nie jest wolny
 	int i = 0;
 	while( 1 )
 	{
+\
+		// Is core free?
 		if( !mutex_is_locked( &input->cores[i].lock ) )
 		{
+			// Mutex handling
+			mutex_trylock( &input->cores[i].lock );
+
+			// Waking up process
+			wait_event_interruptible(input->wait_queue,1);
+
 			return &input->cores[i];
 		}
 
 		// Incrementation handling
 		if( i == input->core_count - 1 )
 		{
+			// Process sleeps 
+			wait_event_interruptible(input->wait_queue,0);
 			i = 0;
 		}
 		else
