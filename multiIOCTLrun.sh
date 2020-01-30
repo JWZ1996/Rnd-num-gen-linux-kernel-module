@@ -1,1 +1,1 @@
-./ioctl ; ./ioctl ; ./ioctl ; ./ioctl
+./ioctl & ./ioctl & ./ioctl

@@ -248,6 +248,7 @@ static ssize_t dev_read( struct file *filep, char *buffer, size_t len, loff_t *o
     for( i = 0; i < len; i++ )
     {
     	packet[i] = get_random_byte( get_free_core( &rnd_drvr ) );
+    	printk( KERN_ALERT "SIUP" );
     }
 
     errors = copy_to_user( buffer, packet, len );
@@ -326,7 +327,7 @@ BYTE get_random_byte( struct generator_t* input )
 
 	// Simulates delay
 	mutex_unlock( &input->lock );
-	mdelay( 500 );
+	mdelay( 100 );
 	return r;
 }
 
@@ -334,7 +335,6 @@ BYTE get_random_byte( struct generator_t* input )
 // If no core is free - acts like a spinlock
 struct generator_t* get_free_core( struct driver_t* input )
 {
-	// Kolejka procesow gdy zaden rdzen nie jest wolny
 	int i = 0;
 	while( 1 )
 	{

@@ -32,7 +32,7 @@ int main() {
 
     packet.bytes = byte_arr;
 
-    fd = open("/dev/char/240:0",O_RDWR);
+    fd = open("/dev/char/241:0",O_RDWR);
 
     ioctl( fd, RND_GEN_NUMBER_OF_BYTES, &packet);
 
